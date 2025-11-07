@@ -22,7 +22,8 @@ This document provides a comprehensive breakdown of the database structure per m
 11. [Module 11: Patient Feedback & Surveys](#module-11-patient-feedback--surveys)
 12. [Module 12: Community Forum & Education](#module-12-community-forum--education)
 13. [Module 13: Medication Reminders](#module-13-medication-reminders)
-14. [System Flow & Data Retrieval Summary](#system-flow--data-retrieval-summary)
+14. [Module 14: Inventory Management](#module-14-inventory-management)
+15. [System Flow & Data Retrieval Summary](#system-flow--data-retrieval-summary)
 
 ---
 
@@ -1275,6 +1276,174 @@ This document provides a comprehensive breakdown of the database structure per m
 
 ---
 
+## MODULE 14: INVENTORY MANAGEMENT
+
+### **Purpose**: Manages medication inventory, stock levels, reorder alerts, expiry tracking, and inventory transactions across facilities.
+
+### **Database Tables**:
+
+#### **14.1. medication_inventory** (Referenced from Module 4, Table 4.4)
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| inventory_id | UUID | PRIMARY KEY | Yes | Unique identifier |
+| medication_id | UUID | FOREIGN KEY → medications(medication_id), NOT NULL | Yes | Medication reference |
+| facility_id | UUID | FOREIGN KEY → facilities(facility_id), NOT NULL | Yes | Facility |
+| batch_number | VARCHAR(50) | | No | Batch/lot number |
+| quantity_on_hand | INTEGER | NOT NULL, DEFAULT 0 | Yes | Current stock quantity |
+| unit | VARCHAR(20) | DEFAULT 'tablets' | Yes | Unit of measure |
+| expiry_date | DATE | | No | Expiry date |
+| reorder_level | INTEGER | DEFAULT 0 | Yes | Reorder threshold |
+| last_restocked | DATE | | No | Last restock date |
+| supplier | VARCHAR(200) | | No | Supplier name |
+| cost_per_unit | DECIMAL(10,2) | | No | Cost per unit |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+
+**Indexes**: `idx_inventory_medication_id`, `idx_inventory_facility_id`, `idx_inventory_expiry_date`, `idx_inventory_batch_number`
+
+#### **14.2. inventory_transactions**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| transaction_id | UUID | PRIMARY KEY | Yes | Unique transaction identifier |
+| inventory_id | UUID | FOREIGN KEY → medication_inventory(inventory_id), NOT NULL | Yes | Inventory item reference |
+| transaction_type | ENUM('restock', 'dispense', 'adjustment', 'transfer', 'expired', 'damaged', 'return') | NOT NULL | Yes | Transaction type |
+| quantity_change | INTEGER | NOT NULL | Yes | Quantity change (positive for restock, negative for dispense) |
+| quantity_before | INTEGER | NOT NULL | Yes | Stock level before transaction |
+| quantity_after | INTEGER | NOT NULL | Yes | Stock level after transaction |
+| batch_number | VARCHAR(50) | | No | Batch number involved |
+| transaction_reason | TEXT | | No | Reason for transaction |
+| performed_by | UUID | FOREIGN KEY → users(user_id), NOT NULL | Yes | User who performed transaction |
+| facility_id | UUID | FOREIGN KEY → facilities(facility_id), NOT NULL | Yes | Facility |
+| transaction_date | DATE | DEFAULT CURRENT_DATE | Yes | Transaction date |
+| reference_id | UUID | | No | Reference to related entity (e.g., prescription_id, order_id) |
+| reference_type | VARCHAR(50) | | No | Type of reference (e.g., 'prescription', 'order', 'transfer') |
+| notes | TEXT | | No | Transaction notes |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+
+**Indexes**: `idx_inventory_transactions_inventory_id`, `idx_inventory_transactions_transaction_type`, `idx_inventory_transactions_transaction_date`, `idx_inventory_transactions_facility_id`
+
+#### **14.3. inventory_alerts**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| alert_id | UUID | PRIMARY KEY | Yes | Unique alert identifier |
+| inventory_id | UUID | FOREIGN KEY → medication_inventory(inventory_id), NOT NULL | Yes | Inventory item reference |
+| alert_type | ENUM('low_stock', 'expiring_soon', 'expired', 'overstock') | NOT NULL | Yes | Alert type |
+| alert_level | ENUM('info', 'warning', 'critical') | DEFAULT 'warning' | Yes | Alert severity |
+| current_value | NUMERIC(10,2) | NOT NULL | Yes | Current value (quantity or days until expiry) |
+| threshold_value | NUMERIC(10,2) | NOT NULL | Yes | Threshold value |
+| message | TEXT | NOT NULL | Yes | Alert message |
+| acknowledged | BOOLEAN | DEFAULT false | Yes | Alert acknowledged |
+| acknowledged_by | UUID | FOREIGN KEY → users(user_id) | No | User who acknowledged |
+| acknowledged_at | TIMESTAMPTZ | | No | Acknowledgment timestamp |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Alert creation timestamp |
+
+**Indexes**: `idx_inventory_alerts_inventory_id`, `idx_inventory_alerts_alert_type`, `idx_inventory_alerts_acknowledged`, `idx_inventory_alerts_created_at`
+
+#### **14.4. inventory_suppliers**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| supplier_id | UUID | PRIMARY KEY | Yes | Unique supplier identifier |
+| supplier_name | VARCHAR(200) | NOT NULL | Yes | Supplier name |
+| contact_person | VARCHAR(200) | | No | Contact person name |
+| contact_phone | VARCHAR(50) | | No | Contact phone |
+| contact_email | VARCHAR(255) | | No | Contact email |
+| address | JSONB | | No | Supplier address |
+| payment_terms | VARCHAR(100) | | No | Payment terms |
+| is_active | BOOLEAN | DEFAULT true | Yes | Active supplier flag |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+| updated_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Last update |
+
+**Indexes**: `idx_inventory_suppliers_name`, `idx_inventory_suppliers_is_active`
+
+#### **14.5. inventory_orders**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| order_id | UUID | PRIMARY KEY | Yes | Unique order identifier |
+| facility_id | UUID | FOREIGN KEY → facilities(facility_id), NOT NULL | Yes | Facility |
+| supplier_id | UUID | FOREIGN KEY → inventory_suppliers(supplier_id), NOT NULL | Yes | Supplier reference |
+| order_date | DATE | DEFAULT CURRENT_DATE | Yes | Order date |
+| expected_delivery_date | DATE | | No | Expected delivery date |
+| status | ENUM('pending', 'ordered', 'in_transit', 'received', 'cancelled', 'partial') | DEFAULT 'pending' | Yes | Order status |
+| total_cost | DECIMAL(10,2) | | No | Total order cost |
+| ordered_by | UUID | FOREIGN KEY → users(user_id), NOT NULL | Yes | User who placed order |
+| received_by | UUID | FOREIGN KEY → users(user_id) | No | User who received order |
+| received_at | TIMESTAMPTZ | | No | Receipt timestamp |
+| notes | TEXT | | No | Order notes |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+
+**Indexes**: `idx_inventory_orders_facility_id`, `idx_inventory_orders_supplier_id`, `idx_inventory_orders_status`, `idx_inventory_orders_order_date`
+
+#### **14.6. inventory_order_items**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| order_item_id | UUID | PRIMARY KEY | Yes | Unique identifier |
+| order_id | UUID | FOREIGN KEY → inventory_orders(order_id), NOT NULL | Yes | Order reference |
+| medication_id | UUID | FOREIGN KEY → medications(medication_id), NOT NULL | Yes | Medication reference |
+| quantity_ordered | INTEGER | NOT NULL | Yes | Quantity ordered |
+| quantity_received | INTEGER | DEFAULT 0 | Yes | Quantity received |
+| unit_cost | DECIMAL(10,2) | | No | Cost per unit |
+| batch_number | VARCHAR(50) | | No | Batch number |
+| expiry_date | DATE | | No | Expiry date |
+| status | ENUM('pending', 'received', 'partial', 'cancelled') | DEFAULT 'pending' | Yes | Item status |
+
+**Indexes**: `idx_inventory_order_items_order_id`, `idx_inventory_order_items_medication_id`
+
+### **Required Data**:
+- **View Inventory**: facility_id → query `medication_inventory` filtered by facility
+- **Restock Medication**: inventory_id, quantity_change, batch_number, expiry_date, supplier
+- **Check Stock Levels**: Query `medication_inventory` where `quantity_on_hand <= reorder_level`
+- **Check Expiry**: Query `medication_inventory` where `expiry_date <= CURRENT_DATE + 30 days`
+- **Create Alert**: inventory_id, alert_type, current_value, threshold_value
+
+### **System Flow**:
+1. **View Inventory (P4.4)**:
+   - User selects facility → query `medication_inventory` (D4) filtered by `facility_id`
+   - Display stock levels, reorder levels, expiry dates
+   - Check for alerts → query `inventory_alerts` (D14) for unacknowledged alerts
+   - Return inventory grid with status indicators
+
+2. **Restock Medication**:
+   - User selects inventory item → query `medication_inventory` (D4)
+   - Enter restock quantity → create transaction → save to `inventory_transactions` (D14)
+   - Update inventory → `quantity_on_hand = quantity_on_hand + quantity_change`
+   - Update `last_restocked = CURRENT_DATE`
+   - If order exists → link to `inventory_orders` (D14)
+   - Check if alert resolved → update/delete `inventory_alerts` (D14)
+   - Log audit entry to `audit_log` (D8)
+
+3. **Generate Low Stock Alert**:
+   - Query `medication_inventory` (D4) where `quantity_on_hand <= reorder_level`
+   - Check if alert already exists in `inventory_alerts` (D14)
+   - If not exists → create alert → save to `inventory_alerts` (D14)
+   - Notify facility staff
+
+4. **Generate Expiry Alert**:
+   - Query `medication_inventory` (D4) where `expiry_date <= CURRENT_DATE + 30 days`
+   - Check if alert already exists in `inventory_alerts` (D14)
+   - If not exists → create alert → save to `inventory_alerts` (D14)
+   - Notify facility staff
+
+5. **Create Purchase Order**:
+   - User selects supplier → query `inventory_suppliers` (D14)
+   - Add order items → save to `inventory_order_items` (D14)
+   - Create order → save to `inventory_orders` (D14)
+   - Calculate total cost → update `inventory_orders.total_cost`
+   - Log audit entry to `audit_log` (D8)
+
+6. **Receive Order**:
+   - User selects order → query `inventory_orders` + `inventory_order_items` (D14)
+   - Update received quantities → update `inventory_order_items.quantity_received`
+   - Create restock transactions → save to `inventory_transactions` (D14)
+   - Update inventory → update `medication_inventory` (D4)
+   - Update order status → set `inventory_orders.status = 'received'`
+   - Log audit entry to `audit_log` (D8)
+
+### **Data Retrieval Points**:
+- **D4 (Medications & Inventory)**: `medication_inventory` table for stock levels
+- **D14 (Inventory Management)**: `inventory_transactions`, `inventory_alerts`, `inventory_suppliers`, `inventory_orders`, `inventory_order_items`
+- **D8 (Audit Log)**: All inventory transactions and alerts
+
+---
+
 ## SYSTEM FLOW & DATA RETRIVAL SUMMARY
 
 ### **Central Data Stores (D1-D8)**:
@@ -1319,6 +1488,11 @@ This document provides a comprehensive breakdown of the database structure per m
    - Used by: All processes (P1-P9)
    - Data Flow: Every system action → Audit entry → Compliance tracking
 
+9. **D14: Inventory Management**
+   - Tables: `inventory_transactions`, `inventory_alerts`, `inventory_suppliers`, `inventory_orders`, `inventory_order_items`
+   - Used by: P4 (Medication Management), Admin (Inventory Management)
+   - Data Flow: Inventory transactions → Stock updates → Alert generation → Order management
+
 ### **Cross-Module Data Flows**:
 
 1. **ARPA Risk Calculation (P2.4)**:
@@ -1335,8 +1509,14 @@ This document provides a comprehensive breakdown of the database structure per m
    - Checks critical values → Notifies provider → Updates D5 (critical_alert_sent)
 
 4. **Reporting & Analytics (P8)**:
-   - Retrieves from: D2, D3, D4, D5, D6, D7 (all data stores)
+   - Retrieves from: D2, D3, D4, D5, D6, D7, D14 (all data stores)
    - Aggregates data → Generates reports → Caches in D8 (dashboard_cache)
+
+5. **Inventory Management Flow**:
+   - Prescription creation (P4.1) → Checks D4 (medication_inventory) for stock availability
+   - Dispensing (P4.3) → Updates D4 (medication_inventory) → Creates D14 (inventory_transactions)
+   - Low stock detection → Creates D14 (inventory_alerts) → Notifies staff
+   - Purchase orders → Creates D14 (inventory_orders) → Receives → Updates D4 (medication_inventory)
 
 ### **Data Retrieval Patterns**:
 
@@ -1365,12 +1545,12 @@ This document provides a comprehensive breakdown of the database structure per m
 ## CONCLUSION
 
 This database structure supports all modules of the MyHubCares Healthcare Management System with:
-- **13 core modules** covering authentication, patient management, clinical care, medications, lab tests, appointments, referrals, reporting, administration, vaccinations, surveys, forums, and reminders
+- **14 core modules** covering authentication, patient management, clinical care, medications, lab tests, appointments, referrals, reporting, administration, vaccinations, surveys, forums, reminders, and inventory management
 - **Comprehensive data types** using UUIDs for primary keys, ENUMs for controlled values, JSONB for flexible data, and proper indexing
 - **Clear data flows** showing how data moves between modules and data stores
 - **Audit compliance** with every action logged to the audit trail
 - **Scalability** with proper indexing, foreign keys, and normalized structure
 
-All modules retrieve data from their respective data stores (D1-D8) and write audit entries to D8 for complete traceability and compliance.
+All modules retrieve data from their respective data stores (D1-D8, D14) and write audit entries to D8 for complete traceability and compliance.
 
 ---
