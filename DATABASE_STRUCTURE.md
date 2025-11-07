@@ -23,7 +23,8 @@ This document provides a comprehensive breakdown of the database structure per m
 12. [Module 12: Community Forum & Education](#module-12-community-forum--education)
 13. [Module 13: Medication Reminders](#module-13-medication-reminders)
 14. [Module 14: Inventory Management](#module-14-inventory-management)
-15. [System Flow & Data Retrieval Summary](#system-flow--data-retrieval-summary)
+15. [Module 15: ART Regimen Management](#module-15-art-regimen-management)
+16. [System Flow & Data Retrieval Summary](#system-flow--data-retrieval-summary)
 
 ---
 
@@ -897,6 +898,33 @@ This document provides a comprehensive breakdown of the database structure per m
 
 **Indexes**: `idx_dashboard_cache_widget_id`, `idx_dashboard_cache_expires_at`
 
+#### **8.4. audit_log**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| audit_id | UUID | PRIMARY KEY | Yes | Unique audit log identifier |
+| user_id | UUID | FOREIGN KEY → users(user_id), NOT NULL | Yes | User who performed action |
+| user_name | VARCHAR(200) | NOT NULL | Yes | User's full name (denormalized for performance) |
+| user_role | VARCHAR(50) | NOT NULL | Yes | User's role (denormalized) |
+| action | ENUM('CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'VIEW', 'EXPORT', 'PRINT', 'DOWNLOAD') | NOT NULL | Yes | Action performed |
+| module | VARCHAR(100) | NOT NULL | Yes | Module/table affected (e.g., 'PATIENTS', 'PRESCRIPTIONS', 'INVENTORY') |
+| entity_type | VARCHAR(100) | | No | Entity type (e.g., 'patient', 'prescription', 'appointment') |
+| entity_id | UUID | | No | Entity ID (if applicable) |
+| record_id | VARCHAR(50) | | No | Human-readable record ID (e.g., patient UIC, prescription number) |
+| old_value | JSONB | | No | Previous value (for UPDATE actions) |
+| new_value | JSONB | | No | New value (for UPDATE actions) |
+| change_summary | TEXT | | No | Summary of changes (e.g., '50 units → 100 units') |
+| ip_address | INET | | No | IP address of user |
+| device_type | ENUM('Desktop', 'Mobile', 'Tablet') | | No | Device type |
+| user_agent | TEXT | | No | Browser/client user agent |
+| remarks | TEXT | | No | Additional remarks/notes |
+| status | ENUM('success', 'failed', 'error') | DEFAULT 'success' | Yes | Action status |
+| error_message | TEXT | | No | Error message (if status = 'failed' or 'error') |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Audit log timestamp |
+
+**Indexes**: `idx_audit_log_user_id`, `idx_audit_log_action`, `idx_audit_log_module`, `idx_audit_log_entity_id`, `idx_audit_log_created_at`, `idx_audit_log_user_role`
+
+**Partitioning**: Consider partitioning by `created_at` (monthly) for large-scale deployments
+
 ### **Required Data**:
 - **Generate Report**: report_id, parameters (date_range, facility_id, patient_id, etc.)
 - **Dashboard Widget**: widget_id, parameters → query relevant data stores
@@ -926,7 +954,7 @@ This document provides a comprehensive breakdown of the database structure per m
 - **D5 (Lab Results)**: Lab test statistics, critical values
 - **D6 (Appointments Calendar)**: Appointment statistics, attendance rates
 - **D7 (Referrals & Counseling)**: Referral statistics, counseling sessions
-- **D8 (Report Queries, Report Runs, Dashboard Cache)**: Report definitions, execution history, cached data
+- **D8 (Audit Log, Report Queries, Report Runs, Dashboard Cache)**: Audit trail, report definitions, execution history, cached data
 
 ---
 
@@ -976,6 +1004,29 @@ This document provides a comprehensive breakdown of the database structure per m
 
 **Indexes**: `idx_user_facility_assignments_user_id`, `idx_user_facility_assignments_facility_id`
 
+#### **9.4. regions**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| region_id | INTEGER | PRIMARY KEY | Yes | Unique region identifier (Philippines region code) |
+| region_name | VARCHAR(150) | NOT NULL | Yes | Region name (e.g., 'National Capital Region (NCR)') |
+| region_code | VARCHAR(20) | UNIQUE | No | Region code (e.g., 'NCR', 'I', 'II') |
+| is_active | BOOLEAN | DEFAULT true | Yes | Active region flag |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+
+**Indexes**: `idx_regions_code`, `idx_regions_is_active`
+
+#### **9.5. client_types**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| client_type_id | INTEGER | PRIMARY KEY | Yes | Unique client type identifier |
+| type_name | VARCHAR(200) | NOT NULL | Yes | Client type name (e.g., 'Males having Sex with Males') |
+| type_code | VARCHAR(50) | UNIQUE | No | Type code (e.g., 'MSM', 'FSW') |
+| description | TEXT | | No | Type description |
+| is_active | BOOLEAN | DEFAULT true | Yes | Active type flag |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+
+**Indexes**: `idx_client_types_code`, `idx_client_types_is_active`
+
 ### **Required Data**:
 - **Manage Users**: username, email, password, full_name, role, facility_id
 - **Manage Facilities**: facility_name, facility_type, address, contact information
@@ -1000,7 +1051,7 @@ This document provides a comprehensive breakdown of the database structure per m
 
 ### **Data Retrieval Points**:
 - **D1 (Users Database)**: User accounts, roles, permissions
-- **D9 (Facilities, System Settings)**: Facility information, system configuration
+- **D9 (Facilities, System Settings, Regions, Client Types)**: Facility information, system configuration, reference data
 - **D8 (Audit Log)**: All administrative actions
 
 ---
@@ -1194,13 +1245,31 @@ This document provides a comprehensive breakdown of the database structure per m
 | module_title | VARCHAR(200) | NOT NULL | Yes | Module title |
 | module_content | TEXT | | No | Module content (HTML/text) |
 | module_type | ENUM('article', 'video', 'infographic', 'pdf') | DEFAULT 'article' | Yes | Content type |
+| category | VARCHAR(50) | | No | Category (e.g., 'basics', 'treatment', 'prevention', 'lifestyle') |
+| description | TEXT | | No | Module description |
+| read_time | VARCHAR(20) | | No | Estimated reading time (e.g., '10 min') |
 | tags | JSONB | | No | Tags array |
 | is_published | BOOLEAN | DEFAULT false | Yes | Published flag |
 | view_count | INTEGER | DEFAULT 0 | Yes | View count |
 | created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
 | updated_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Last update |
 
-**Indexes**: `idx_learning_modules_type`, `idx_learning_modules_is_published`, `idx_learning_modules_created_at`
+**Indexes**: `idx_learning_modules_type`, `idx_learning_modules_is_published`, `idx_learning_modules_created_at`, `idx_learning_modules_category`
+
+#### **12.5. faqs**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| faq_id | UUID | PRIMARY KEY | Yes | Unique FAQ identifier |
+| question | TEXT | NOT NULL | Yes | FAQ question |
+| answer | TEXT | NOT NULL | Yes | FAQ answer |
+| category | VARCHAR(50) | | No | FAQ category (e.g., 'general', 'treatment', 'prevention') |
+| display_order | INTEGER | DEFAULT 0 | Yes | Display order for sorting |
+| view_count | INTEGER | DEFAULT 0 | Yes | View count |
+| is_published | BOOLEAN | DEFAULT true | Yes | Published flag |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+| updated_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Last update |
+
+**Indexes**: `idx_faqs_category`, `idx_faqs_is_published`, `idx_faqs_display_order`
 
 ### **Required Data**:
 - **Create Forum Post**: category_id, title, content, patient_id (optional if anonymous)
@@ -1223,7 +1292,7 @@ This document provides a comprehensive breakdown of the database structure per m
 
 ### **Data Retrieval Points**:
 - **D2 (Patients Database)**: Patient information (if not anonymous)
-- **Forum Tables**: `forum_categories`, `forum_posts`, `forum_replies`, `learning_modules`
+- **Forum Tables**: `forum_categories`, `forum_posts`, `forum_replies`, `learning_modules`, `faqs`
 - **D8 (Audit Log)**: Forum post and reply events
 
 ---
@@ -1444,6 +1513,113 @@ This document provides a comprehensive breakdown of the database structure per m
 
 ---
 
+## MODULE 15: ART REGIMEN MANAGEMENT
+
+### **Purpose**: Manages antiretroviral therapy (ART) regimens, tracks multiple drugs per regimen, monitors pill dispensing, adherence, and regimen changes.
+
+### **Database Tables**:
+
+#### **15.1. art_regimens**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| regimen_id | UUID | PRIMARY KEY | Yes | Unique regimen identifier |
+| patient_id | UUID | FOREIGN KEY → patients(patient_id), NOT NULL | Yes | Patient reference |
+| provider_id | UUID | FOREIGN KEY → users(user_id), NOT NULL | Yes | Prescribing physician |
+| facility_id | UUID | FOREIGN KEY → facilities(facility_id), NOT NULL | Yes | Facility |
+| start_date | DATE | NOT NULL | Yes | Regimen start date |
+| stop_date | DATE | | No | Regimen stop date (if stopped/changed) |
+| status | ENUM('active', 'stopped', 'changed') | DEFAULT 'active' | Yes | Regimen status |
+| stop_reason | TEXT | | No | Reason for stopping/changing regimen |
+| change_reason | TEXT | | No | Reason for regimen change |
+| notes | TEXT | | No | Clinical notes |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+| updated_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Last update timestamp |
+
+**Indexes**: `idx_art_regimens_patient_id`, `idx_art_regimens_status`, `idx_art_regimens_start_date`
+
+#### **15.2. art_regimen_drugs**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| regimen_drug_id | UUID | PRIMARY KEY | Yes | Unique identifier |
+| regimen_id | UUID | FOREIGN KEY → art_regimens(regimen_id), NOT NULL | Yes | Regimen reference |
+| medication_id | UUID | FOREIGN KEY → medications(medication_id), NOT NULL | Yes | Medication reference |
+| drug_name | VARCHAR(200) | NOT NULL | Yes | Drug name (e.g., 'Tenofovir/Lamivudine/Dolutegravir') |
+| dosage | VARCHAR(50) | NOT NULL | Yes | Dosage (e.g., '1 tablet') |
+| pills_per_day | INTEGER | NOT NULL | Yes | Number of pills per day |
+| pills_dispensed | INTEGER | DEFAULT 0 | Yes | Total pills dispensed |
+| pills_remaining | INTEGER | DEFAULT 0 | Yes | Current pills remaining |
+| missed_doses | INTEGER | DEFAULT 0 | Yes | Total missed doses count |
+| last_dispensed_date | DATE | | No | Last pill dispensing date |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+
+**Indexes**: `idx_art_regimen_drugs_regimen_id`, `idx_art_regimen_drugs_medication_id`
+
+#### **15.3. art_regimen_history**
+| Column Name | Data Type | Constraints | Required | Description |
+|------------|-----------|-------------|----------|-------------|
+| history_id | UUID | PRIMARY KEY | Yes | Unique identifier |
+| regimen_id | UUID | FOREIGN KEY → art_regimens(regimen_id), NOT NULL | Yes | Regimen reference |
+| action_type | ENUM('started', 'stopped', 'changed', 'drug_added', 'drug_removed', 'pills_dispensed', 'dose_missed') | NOT NULL | Yes | Action type |
+| action_date | DATE | DEFAULT CURRENT_DATE | Yes | Action date |
+| previous_status | VARCHAR(50) | | No | Previous status (for status changes) |
+| new_status | VARCHAR(50) | | No | New status (for status changes) |
+| details | JSONB | | No | Action details (drug changes, quantities, etc.) |
+| performed_by | UUID | FOREIGN KEY → users(user_id), NOT NULL | Yes | User who performed action |
+| notes | TEXT | | No | Additional notes |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Yes | Creation timestamp |
+
+**Indexes**: `idx_art_regimen_history_regimen_id`, `idx_art_regimen_history_action_date`, `idx_art_regimen_history_action_type`
+
+### **Required Data**:
+- **Start ART Regimen**: patient_id, provider_id, facility_id, start_date, drugs (array with drug_name, dosage, pills_per_day)
+- **Dispense Pills**: regimen_id, regimen_drug_id, quantity_dispensed → update pills_dispensed, pills_remaining
+- **Stop/Change Regimen**: regimen_id, stop_date, status, stop_reason/change_reason
+- **Track Missed Dose**: regimen_id, regimen_drug_id → increment missed_doses
+
+### **System Flow**:
+1. **Start ART Regimen**:
+   - Physician selects patient → query `patients` (D2)
+   - Select medications → query `medications` (D4) where `is_art = true`
+   - Enter regimen details → create regimen → save to `art_regimens` (D15)
+   - Add drugs → save to `art_regimen_drugs` (D15)
+   - Create history entry → save to `art_regimen_history` (D15) with action_type = 'started'
+   - Log audit entry to `audit_log` (D8)
+
+2. **Dispense ART Pills**:
+   - Nurse selects regimen → query `art_regimens` + `art_regimen_drugs` (D15)
+   - Enter quantity dispensed → update `pills_dispensed` and `pills_remaining`
+   - Update `last_dispensed_date = CURRENT_DATE`
+   - Create history entry → save to `art_regimen_history` (D15) with action_type = 'pills_dispensed'
+   - Check inventory → update `medication_inventory` (D4) if needed
+   - Log audit entry to `audit_log` (D8)
+
+3. **Stop/Change Regimen**:
+   - Physician selects regimen → query `art_regimens` (D15)
+   - Enter stop/change reason → update `status`, `stop_date`, `stop_reason`/`change_reason`
+   - Create history entry → save to `art_regimen_history` (D15) with action_type = 'stopped' or 'changed'
+   - If changed → create new regimen → link to previous regimen
+   - Log audit entry to `audit_log` (D8)
+
+4. **Track Missed Dose**:
+   - Patient reports missed dose OR system detects missed dose → update `art_regimen_drugs.missed_doses`
+   - Create history entry → save to `art_regimen_history` (D15) with action_type = 'dose_missed'
+   - Update ARPA risk score → trigger P2.4 (ARPA calculation)
+   - Log to `audit_log` (D8)
+
+5. **View Regimen History**:
+   - Select patient → query `art_regimens` (D15) filtered by `patient_id`
+   - Join with `art_regimen_drugs` for drug details
+   - Join with `art_regimen_history` for complete timeline
+   - Calculate days on ART: `CURRENT_DATE - start_date` (or `stop_date - start_date` if stopped)
+
+### **Data Retrieval Points**:
+- **D2 (Patients Database)**: Patient information for regimens
+- **D4 (Medications & Inventory)**: ART medications (`is_art = true`), inventory for dispensing
+- **D15 (ART Regimens)**: `art_regimens`, `art_regimen_drugs`, `art_regimen_history`
+- **D8 (Audit Log)**: All ART regimen events
+
+---
+
 ## SYSTEM FLOW & DATA RETRIVAL SUMMARY
 
 ### **Central Data Stores (D1-D8)**:
@@ -1465,7 +1641,7 @@ This document provides a comprehensive breakdown of the database structure per m
 
 4. **D4: Medications & Inventory**
    - Tables: `medications`, `prescriptions`, `prescription_items`, `medication_inventory`, `dispense_events`, `medication_reminders`, `medication_adherence`
-   - Used by: P4 (Medication Management), P2 (ARPA calculation), P8 (Reports)
+   - Used by: P4 (Medication Management), P2 (ARPA calculation), P8 (Reports), P15 (ART Regimens)
    - Data Flow: Prescription → Inventory check → Dispensing → Reminders → Adherence tracking
 
 5. **D5: Lab Results**
@@ -1483,15 +1659,25 @@ This document provides a comprehensive breakdown of the database structure per m
    - Used by: P7 (Care Coordination), P8 (Reports)
    - Data Flow: Referral creation → HTS session → Counseling → Care tasks → Follow-up
 
-8. **D8: Audit Log**
-   - Tables: `audit_log` (shared across all modules)
-   - Used by: All processes (P1-P9)
-   - Data Flow: Every system action → Audit entry → Compliance tracking
+8. **D8: Audit Log & Reporting**
+   - Tables: `audit_log`, `report_queries`, `report_runs`, `dashboard_cache`
+   - Used by: All processes (P1-P9, P15), P8 (Reporting)
+   - Data Flow: Every system action → Audit entry → Compliance tracking → Report generation
 
-9. **D14: Inventory Management**
+9. **D9: System Administration & Reference Data**
+   - Tables: `facilities`, `system_settings`, `user_facility_assignments`, `regions`, `client_types`
+   - Used by: P9 (System Admin), P2 (Patient Management for client types), All modules (for facility filtering)
+   - Data Flow: System configuration → Reference data → Facility assignments → Multi-facility support
+
+10. **D14: Inventory Management**
    - Tables: `inventory_transactions`, `inventory_alerts`, `inventory_suppliers`, `inventory_orders`, `inventory_order_items`
    - Used by: P4 (Medication Management), Admin (Inventory Management)
    - Data Flow: Inventory transactions → Stock updates → Alert generation → Order management
+
+11. **D15: ART Regimens**
+   - Tables: `art_regimens`, `art_regimen_drugs`, `art_regimen_history`
+   - Used by: P4 (Medication Management), P2 (ARPA calculation), P8 (Reports)
+   - Data Flow: Regimen start → Drug tracking → Pill dispensing → Adherence monitoring → Regimen changes
 
 ### **Cross-Module Data Flows**:
 
@@ -1509,7 +1695,7 @@ This document provides a comprehensive breakdown of the database structure per m
    - Checks critical values → Notifies provider → Updates D5 (critical_alert_sent)
 
 4. **Reporting & Analytics (P8)**:
-   - Retrieves from: D2, D3, D4, D5, D6, D7, D14 (all data stores)
+   - Retrieves from: D2, D3, D4, D5, D6, D7, D9, D14, D15 (all data stores)
    - Aggregates data → Generates reports → Caches in D8 (dashboard_cache)
 
 5. **Inventory Management Flow**:
@@ -1545,12 +1731,18 @@ This document provides a comprehensive breakdown of the database structure per m
 ## CONCLUSION
 
 This database structure supports all modules of the MyHubCares Healthcare Management System with:
-- **14 core modules** covering authentication, patient management, clinical care, medications, lab tests, appointments, referrals, reporting, administration, vaccinations, surveys, forums, reminders, and inventory management
+- **15 core modules** covering authentication, patient management, clinical care, medications, lab tests, appointments, referrals, reporting, administration, vaccinations, surveys, forums, reminders, inventory management, and ART regimen management
 - **Comprehensive data types** using UUIDs for primary keys, ENUMs for controlled values, JSONB for flexible data, and proper indexing
 - **Clear data flows** showing how data moves between modules and data stores
 - **Audit compliance** with every action logged to the audit trail
 - **Scalability** with proper indexing, foreign keys, and normalized structure
 
-All modules retrieve data from their respective data stores (D1-D8, D14) and write audit entries to D8 for complete traceability and compliance.
+All modules retrieve data from their respective data stores (D1-D9, D14-D15) and write audit entries to D8 for complete traceability and compliance.
+
+**Reference/Lookup Tables Included:**
+- `regions` - Philippines administrative regions
+- `client_types` - Patient/client type classifications
+- `faqs` - Frequently asked questions for health education
+- All tables include proper indexing, foreign keys, and constraints for data integrity
 
 ---
