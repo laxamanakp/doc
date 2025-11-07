@@ -185,8 +185,8 @@ This document provides a comprehensive breakdown of the database structure per m
 | current_address | JSONB | | No | Full address (street, barangay, city, province, zip) |
 | contact_phone | VARCHAR(30) | | No | Primary phone number |
 | email | VARCHAR(255) | | No | Email address |
-| mother_name | VARCHAR(200) | | No | Mother's full name (for UIC) |
-| father_name | VARCHAR(200) | | No | Father's full name (for UIC) |
+| mother_name | VARCHAR(200) | | No | Mother's first 2 letters (for UIC) |
+| father_name | VARCHAR(200) | | No | Father's first 2 letters (for UIC) |
 | birth_order | INTEGER | | No | Birth order (1, 2, 3...) |
 | guardian_name | VARCHAR(200) | | No | Guardian name (if minor) |
 | guardian_relationship | VARCHAR(50) | | No | Relationship to guardian |
@@ -243,14 +243,14 @@ This document provides a comprehensive breakdown of the database structure per m
 
 ### **Required Data**:
 - **Patient Registration**: first_name, last_name, birth_date, sex, mother_name, father_name, birth_order (for UIC), facility_id
-- **UIC Generation**: Mother's initials + Father's initials + Birth order + DOB (format: MIFI0111-15-1990)
+- **UIC Generation**: Mother's first 2 letters + Father's first 2 letters + Birth order + DOB (format: MIFI0111-15-1990)
 - **ARPA Risk Calculation**: Requires data from D3 (visits), D4 (medications), D5 (lab results), D6 (appointments)
 
 ### **System Flow**:
 1. **Patient Registration (P2.1)**:
    - Admin/Physician enters patient data → validate required fields
    - Check for duplicate UIC in `patients` table (D2)
-   - Generate UIC: Extract initials from mother_name + father_name + birth_order + DOB
+   - Generate UIC: Use mother_name (first 2 letters) + father_name (first 2 letters) + birth_order + DOB
    - Create patient record → save to `patients` (D2)
    - Log audit entry to `audit_log` (D8)
 
@@ -1374,4 +1374,3 @@ This database structure supports all modules of the MyHubCares Healthcare Manage
 All modules retrieve data from their respective data stores (D1-D8) and write audit entries to D8 for complete traceability and compliance.
 
 ---
-
