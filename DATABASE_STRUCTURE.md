@@ -4,7 +4,7 @@
 **Website**: [www.myhubcares.com](https://www.myhubcares.com/)
 
 This document provides a comprehensive breakdown of the database structure per module, including data requirements, data types, system flows, and data retrieval points.
-
+Total: 58 tables
 ---
 
 ## 📋 TABLE OF CONTENTS
@@ -1746,4 +1746,5 @@ All modules retrieve data from their respective data stores (D1-D9, D14-D15) and
 - All tables include proper indexing, foreign keys, and constraints for data integrity
 
 ---
+
 
